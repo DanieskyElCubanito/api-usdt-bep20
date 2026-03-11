@@ -1,0 +1,7 @@
+{
+  "name": "bep20-usdt-api",
+  "version": "1.0.0",
+  "dependencies": {
+    "ethers": "^6.11.1"
+  }
+}
