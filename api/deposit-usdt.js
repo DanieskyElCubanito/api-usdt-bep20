@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const usdtBalance = await usdtContract.balanceOf(userWallet.address);
     const decimals = await usdtContract.decimals();
     const formattedBalance = ethers.formatUnits(usdtBalance, decimals);
-    if (parseFloat(formattedBalance) < 1) {
+    if (parseFloat(formattedBalance) < 0.0001) {
       return res.status(200).json({ error: "Insufficient USDT balance" });
     }
     const bnbBalance = await provider.getBalance(userWallet.address);
