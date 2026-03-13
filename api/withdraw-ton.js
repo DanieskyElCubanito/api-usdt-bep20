@@ -1,4 +1,4 @@
-import { TonClient, WalletContractV5R1, fromNano, toNano, internal, SendMode } from "@ton/ton";
+import { TonClient, WalletContractV5R1, fromNano, toNano, internal } from "@ton/ton";
 import { mnemonicToPrivateKey } from "@ton/crypto";
 import { Buffer } from 'buffer';
 
@@ -21,25 +21,25 @@ export default async function handler(req, res) {
     const contract = client.open(wallet);
     const walletAddress = wallet.address.toString({ bounceable: false, testOnly: false });
     
-    const balance = await contract.getBalance();
-
+    // Consulta de balance rápida
     if (!amt || parseFloat(amt) === 0) {
+      const balance = await contract.getBalance();
       const balanceFormateado = parseFloat(fromNano(balance)).toFixed(4);
       return res.status(200).json({ 
         success: false, 
-        debug: 📊 <b>Billetera W5 Sincronizada</b>\n\n<b>Dirección:</b> <code>${walletAddress}</code>\n<b>Balance:</b> <code>${balanceFormateado} TON</code>
+        debug: `📊 <b>Billetera W5 Sincronizada</b>\n\n<b>Dirección:</b> <code>${walletAddress}</code>\n<b>Balance:</b> <code>${balanceFormateado} TON</code>`
       });
     }
 
     const amountToSend = toNano(amt.toString());
     const seqno = await contract.getSeqno();
 
-    // 🚀 CAMBIO CLAVE: Usamos SendMode.PAY_GAS_SEPARATELY
-    // Esto hace que si pides 0.1, lleguen 0.1 exactos.
+    // Enviamos la transferencia
+    // Usamos el modo 1 (PAY_GAS_SEPARATELY) + 2 (IGNORE_ERRORS) = 3
     await contract.sendTransfer({
       seqno,
       secretKey: keyPair.secretKey,
-      sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+      sendMode: 3, 
       messages: [
         internal({
           to: recipientAddress,
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(200).json({ 
       success: false, 
-      error: err.message
+      error: "Error técnico: " + err.message
     });
   }
-}
+  }
