@@ -34,7 +34,7 @@ export default async function handler(req, res) {
           to: recipientAddress,
           value: amountToSend,
           bounce: false,
-          body: "Retiro KubaPay", // Mensaje profesional
+          body: "@KubaPaybot", // Mensaje profesional
         })
       ]
     });
@@ -51,4 +51,4 @@ export default async function handler(req, res) {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-          }
+  }
