@@ -1,11 +1,13 @@
 {
-  "name": "api-usdt-bep20",
+  "name": "api-kuba-pay",
   "version": "1.0.0",
-  "description": "API para depósitos USDT y TON",
+  "description": "API para depósitos de USDT, TON y TRX",
   "main": "index.js",
   "dependencies": {
     "@ton/ton": "^13.11.1",
     "@ton/crypto": "^3.2.0",
-    "ethers": "^6.0.0"
+    "ethers": "^6.11.1",
+    "tronweb": "^5.3.0",
+    "node-fetch": "^3.3.2"
   }
 }
