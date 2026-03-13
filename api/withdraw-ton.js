@@ -1,5 +1,5 @@
 import { TonClient, WalletContractV4, internal, fromNano, toNano } from "@ton/ton";
-import { keyPairFromSecretKey } from "@ton/crypto";
+import { keyPairFromSeed } from "@ton/crypto"; // Usamos keyPairFromSeed para 32 bytes
 
 const TON_RPC = "https://toncenter.com/api/v2/jsonRPC";
 
@@ -11,13 +11,12 @@ export default async function handler(req, res) {
   try {
     const client = new TonClient({ endpoint: TON_RPC });
     
-    // Convertimos la llave privada de hexadecimal a Buffer
-    const secretKeyBuffer = Buffer.from(privateKey, 'hex');
+    // Convertimos tus 64 caracteres (32 bytes) a Buffer
+    const seed = Buffer.from(privateKey, 'hex');
     
-    // Derivamos el par de llaves (necesario para obtener la clave pública)
-    const keyPair = keyPairFromSecretKey(secretKeyBuffer);
+    // En TON, si tienes 32 bytes, se usa como "seed" para generar el par de llaves completo (64 bytes)
+    const keyPair = keyPairFromSeed(seed);
     
-    // Abrimos el contrato de la billetera V4R2
     const wallet = WalletContractV4.create({ 
         workchain: 0, 
         publicKey: keyPair.publicKey 
@@ -31,20 +30,20 @@ export default async function handler(req, res) {
     if (balance < (amountToSend + feeReserve)) {
       return res.status(200).json({ 
         success: false, 
-        error: "Saldo insuficiente. Balance en wallet: " + fromNano(balance) + " TON." 
+        error: "Saldo insuficiente. Balance: " + fromNano(balance) + " TON." 
       });
     }
 
     const seqno = await contract.getSeqno();
     const transfer = await contract.createTransfer({
       seqno,
-      secretKey: keyPair.secretKey,
+      secretKey: keyPair.secretKey, // Aquí ya van los 64 bytes que pide la librería
       messages: [
         internal({
           to: recipientAddress,
           value: amountToSend,
           bounce: false,
-          body: "@kubaPayBot", // Comentario actualizado
+          body: "@kubaPayBot", 
         })
       ]
     });
@@ -53,11 +52,10 @@ export default async function handler(req, res) {
     
     res.status(200).json({ 
         success: true, 
-        amount: amt,
-        txid: "Transacción enviada con éxito"
+        amount: amt
     });
     
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
-      }
+}
