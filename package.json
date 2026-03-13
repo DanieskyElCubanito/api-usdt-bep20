@@ -1,7 +1,7 @@
 {
   "name": "api-kuba-pay",
   "version": "1.0.0",
-  "description": "API para depósitos de USDT, TON y TRX",
+  "description": "API para depósitos y retiros",
   "main": "index.js",
   "dependencies": {
     "@ton/ton": "^13.11.1",
@@ -12,6 +12,6 @@
     "buffer": "^6.0.3"
   },
   "engines": {
-    "node": "18.x"
+    "node": "22.x" 
   }
 }
