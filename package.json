@@ -1,7 +1,11 @@
 {
-  "name": "bep20-usdt-api",
+  "name": "api-usdt-bep20",
   "version": "1.0.0",
+  "description": "API para depósitos USDT y TON",
+  "main": "index.js",
   "dependencies": {
-    "ethers": "^6.11.1"
+    "@ton/ton": "^13.11.1",
+    "@ton/crypto": "^3.2.0",
+    "ethers": "^6.0.0"
   }
 }
