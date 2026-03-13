@@ -1,29 +1,40 @@
-import { TonClient, WalletContractV4, fromNano } from "@ton/ton";
+import { TonClient, WalletContractV5R1, fromNano } from "@ton/ton";
 import { mnemonicToPrivateKey } from "@ton/crypto";
+import { Buffer } from 'buffer';
+
+const TON_API_KEY = "f8c2008d8ba557465e49df5bdd98eb987ef639a5ffabca82203c6d6f6b802fb5"; 
+const TON_RPC = "https://toncenter.com/api/v2/jsonRPC";
 
 export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Solo POST' });
+  
   try {
-    const { mnemonic } = req.body;
-    
-    // 1. Probamos la derivación estándar de TON
+    const data = req.body;
+    const { mnemonic } = data;
+
+    if (!mnemonic) return res.status(200).json({ success: false, error: "Falta el mnemonic" });
+
+    const client = new TonClient({ endpoint: TON_RPC, apiKey: TON_API_KEY });
     const keyPair = await mnemonicToPrivateKey(mnemonic.trim().split(/\s+/));
     
-    // 2. Probamos con un Wallet ID alternativo que a veces usan apps multi-moneda
-    const walletStandard = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
-    const walletSafePalAlt = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey, walletId: 696618115 });
-
-    const addr1 = walletStandard.address.toString({ bounceable: false });
-    const addr2 = walletSafePalAlt.address.toString({ bounceable: false });
+    // 🚀 AQUÍ ESTÁ EL CAMBIO: Usamos Wallet v5 R1
+    const wallet = WalletContractV5R1.create({ 
+      workchain: 0, 
+      publicKey: keyPair.publicKey 
+    });
+    
+    const contract = client.open(wallet);
+    const walletAddress = wallet.address.toString({ bounceable: false, testOnly: false });
+    
+    const balance = await contract.getBalance();
+    const balanceFormateado = parseFloat(fromNano(balance)).toFixed(4);
 
     return res.status(200).json({ 
       success: false, 
-      debug: `🔎 <b>Intento de Sincronización Final:</b>\n\n` +
-             `<b>Opción A (Estándar):</b>\n<code>${addr1}</code>\n\n` +
-             `<b>Opción B (SafePal ID):</b>\n<code>${addr2}</code>\n\n` +
-             `<i>Tu dirección buscada: UQDJwJ...</i>\n\n` +
-             `⚠️ <b>Si ninguna coincide:</b> Ve a SafePal > Configuración de la billetera y dime si tienes activada la 'Frase de paso' o 'Passphrase'.`
+      debug: `📊 <b>Billetera W5 Sincronizada</b>\n\n<b>Dirección:</b> <code>${walletAddress}</code>\n<b>Balance:</b> <code>${balanceFormateado} TON</code>`
     });
+
   } catch (err) {
-    return res.status(200).json({ error: err.message });
+    return res.status(200).json({ success: false, error: "Error W5: " + err.message });
   }
-                                }
+                                               }
