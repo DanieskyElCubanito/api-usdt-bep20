@@ -6,33 +6,36 @@ const TON_API_KEY = "f8c2008d8ba557465e49df5bdd98eb987ef639a5ffabca82203c6d6f6b8
 const TON_RPC = "https://toncenter.com/api/v2/jsonRPC";
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST solamente' });
   
   try {
     const data = req.body;
     const { mnemonic, amt } = data;
 
-    if (!mnemonic) return res.status(200).json({ success: false, error: "Falta mnemonic" });
+    if (!mnemonic) return res.status(200).json({ success: false, error: "Falta el mnemonic" });
 
     const client = new TonClient({ endpoint: TON_RPC, apiKey: TON_API_KEY });
     
-    // Generar llaves
+    // 1. Generar llaves
     const keyPair = await mnemonicToPrivateKey(mnemonic.trim().split(/\s+/));
     
-    // FORZAMOS LA VERSIÓN V4R2 (La que usa SafePal)
+    // 2. Crear contrato V4R2 con Wallet ID estándar (696618115)
+    // Este es el que usa SafePal y Tonkeeper por defecto
     const wallet = WalletContractV4.create({ 
       workchain: 0, 
-      publicKey: keyPair.publicKey 
+      publicKey: keyPair.publicKey,
+      walletId: 696618115 
     });
     
     const contract = client.open(wallet);
     
-    // Formato 'non-bounceable' (UQ...) que es el que me pasaste
+    // 3. Generar dirección en formato UQ (User Friendly / Non-bounceable)
     const walletAddress = wallet.address.toString({ 
       bounceable: false, 
       testOnly: false 
     });
     
+    // 4. Obtener balance
     const balance = await contract.getBalance();
     const balanceFormateado = parseFloat(fromNano(balance)).toFixed(4);
 
@@ -42,6 +45,6 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    return res.status(200).json({ success: false, error: err.message });
+    return res.status(200).json({ success: false, error: "Error de red: " + err.message });
   }
-}
+                                 }
