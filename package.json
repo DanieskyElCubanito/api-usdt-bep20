@@ -8,6 +8,10 @@
     "@ton/crypto": "^3.2.0",
     "ethers": "^6.11.1",
     "tronweb": "^5.3.0",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "buffer": "^6.0.3"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
