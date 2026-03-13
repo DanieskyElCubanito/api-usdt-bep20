@@ -1,4 +1,4 @@
-import { TonClient, WalletContractV5R1, fromNano, toNano, internal } from "@ton/ton";
+import { TonClient, WalletContractV5R1, fromNano, toNano, internal, SendMode } from "@ton/ton";
 import { mnemonicToPrivateKey } from "@ton/crypto";
 import { Buffer } from 'buffer';
 
@@ -17,40 +17,35 @@ export default async function handler(req, res) {
     const client = new TonClient({ endpoint: TON_RPC, apiKey: TON_API_KEY });
     const keyPair = await mnemonicToPrivateKey(mnemonic.trim().split(/\s+/));
     
-    // Configuración exacta para Wallet W5 R1
-    const wallet = WalletContractV5R1.create({ 
-      workchain: 0, 
-      publicKey: keyPair.publicKey 
-    });
-    
+    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
     const contract = client.open(wallet);
     const walletAddress = wallet.address.toString({ bounceable: false, testOnly: false });
     
     const balance = await contract.getBalance();
-    const balanceFormateado = parseFloat(fromNano(balance)).toFixed(4);
 
-    // Consulta de balance (cuando amt es 0)
     if (!amt || parseFloat(amt) === 0) {
+      const balanceFormateado = parseFloat(fromNano(balance)).toFixed(4);
       return res.status(200).json({ 
         success: false, 
-        debug: `📊 <b>Billetera W5 Sincronizada</b>\n\n<b>Dirección:</b> <code>${walletAddress}</code>\n<b>Balance:</b> <code>${balanceFormateado} TON</code>`
+        debug: 📊 <b>Billetera W5 Sincronizada</b>\n\n<b>Dirección:</b> <code>${walletAddress}</code>\n<b>Balance:</b> <code>${balanceFormateado} TON</code>
       });
     }
 
-    // LÓGICA DE RETIRO CORREGIDA PARA W5
     const amountToSend = toNano(amt.toString());
     const seqno = await contract.getSeqno();
 
-    // En W5, la estructura de la transferencia es más robusta
+    // 🚀 CAMBIO CLAVE: Usamos SendMode.PAY_GAS_SEPARATELY
+    // Esto hace que si pides 0.1, lleguen 0.1 exactos.
     await contract.sendTransfer({
       seqno,
       secretKey: keyPair.secretKey,
+      sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
       messages: [
         internal({
           to: recipientAddress,
           value: amountToSend,
           bounce: false,
-          body: "Retiro KubaPay", // Comentario de la transacción
+          body: "@KubaPayBot",
         })
       ]
     });
@@ -62,11 +57,9 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    // Si hay un error, devolvemos el detalle técnico para depurar
     return res.status(200).json({ 
       success: false, 
-      error: err.message,
-      debug: "Asegúrate de tener saldo para el gas (0.05 TON aprox)."
+      error: err.message
     });
   }
-                                                   }
+}
