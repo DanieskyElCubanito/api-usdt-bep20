@@ -62,4 +62,4 @@ export default async function handler(req, res) {
   } catch (error) {
     res.status(200).json({ success: false, error: "Error técnico: " + error.message });
   }
-  }
+}
