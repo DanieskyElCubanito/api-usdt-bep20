@@ -1,4 +1,4 @@
-import { TonClient, WalletContractV3R2, WalletContractV4, fromNano } from "@ton/ton";
+import { TonClient, WalletContractV2R2, WalletContractV3R2, WalletContractV4, fromNano } from "@ton/ton";
 import { mnemonicToPrivateKey } from "@ton/crypto";
 
 const TON_RPC = "https://toncenter.com/api/v2/jsonRPC";
@@ -10,22 +10,24 @@ export default async function handler(req, res) {
     const client = new TonClient({ endpoint: TON_RPC, apiKey: TON_API_KEY });
     const keyPair = await mnemonicToPrivateKey(mnemonic.trim().split(/\s+/));
 
-    // Probar Versión 4 R2 (SafePal estándar)
-    const walletV4 = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
-    const addrV4 = walletV4.address.toString({ bounceable: false });
+    // V4R2 (La más probable)
+    const v4r2 = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey, walletId: 696618115 });
+    // V3R2
+    const v3r2 = WalletContractV3R2.create({ workchain: 0, publicKey: keyPair.publicKey });
+    // V2R2
+    const v2r2 = WalletContractV2R2.create({ workchain: 0, publicKey: keyPair.publicKey });
 
-    // Probar Versión 3 R2 (Antigua)
-    const walletV3 = WalletContractV3R2.create({ workchain: 0, publicKey: keyPair.publicKey });
-    const addrV3 = walletV3.address.toString({ bounceable: false });
+    const addr = (w) => w.address.toString({ bounceable: false });
 
     return res.status(200).json({ 
       success: false, 
-      debug: `🔎 <b>Resultado del Escaneo:</b>\n\n` +
-             `<b>Si tu versión es V4R2:</b>\n<code>${addrV4}</code>\n\n` +
-             `<b>Si tu versión es V3R2:</b>\n<code>${addrV3}</code>\n\n` +
-             `<i>Dime cuál de estas dos aparece en tu SafePal.</i>`
+      debug: `🔎 <b>Escaneo de Versiones:</b>\n\n` +
+             `<b>V4R2:</b> <code>${addr(v4r2)}</code>\n\n` +
+             `<b>V3R2:</b> <code>${addr(v3r2)}</code>\n\n` +
+             `<b>V2R2:</b> <code>${addr(v2r2)}</code>\n\n` +
+             `<i>Compara con tu SafePal: UQDJwJ...</i>`
     });
   } catch (err) {
-    return res.status(200).json({ error: err.message });
+    return res.status(200).json({ error: "Revisa tus palabras: " + err.message });
   }
-}
+      }
