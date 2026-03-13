@@ -18,7 +18,7 @@ export default async function handler(req, res) {
 
     const client = new TonClient({ endpoint: TON_RPC, apiKey: TON_API_KEY });
     
-    // Generar llaves SIEMPRE desde las palabras (estándar SafePal)
+    // Generar llaves desde el mnemonic
     const keyPair = await mnemonicToPrivateKey(mnemonic.trim().split(/\s+/));
     
     // Crear billetera V4R2
@@ -60,6 +60,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
 
   } catch (error) {
-    res.status(200).json({ success: false, error: "Error: " + error.message });
+    return res.status(200).json({ success: false, error: "Error: " + error.message });
   }
-        }
+}
