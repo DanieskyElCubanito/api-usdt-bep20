@@ -1,61 +1,49 @@
 import { TonClient, WalletContractV4, internal, fromNano, toNano } from "@ton/ton";
-import { keyPairFromSeed } from "@ton/crypto";
+import { mnemonicToPrivateKey } from "@ton/crypto";
 
 const TON_RPC = "https://toncenter.com/api/v2/jsonRPC";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Método no permitido');
-  const { privateKey, recipientAddress, amt } = req.body;
+
+  const { adminSeed, userAddress, amount } = req.body;
 
   try {
     const client = new TonClient({ endpoint: TON_RPC });
-    
-    // Convertimos tus 64 caracteres a un Buffer de 32 bytes
-    const seed = Buffer.from(privateKey, 'hex');
-    
-    if (seed.length !== 32) {
-      return res.status(200).json({ success: false, error: "La llave debe tener exactamente 64 caracteres hexadecimales. Tamaño actual: " + (seed.length * 2) });
-    }
+    const mnemonicArray = adminSeed.split(" ");
+    const keyPair = await mnemonicToPrivateKey(mnemonicArray);
 
-    // Generamos el par de llaves (Esto crea un secretKey de 64 bytes)
-    const keyPair = keyPairFromSeed(seed);
-    
-    const wallet = WalletContractV4.create({ 
-        workchain: 0, 
-        publicKey: keyPair.publicKey 
-    });
-    
+    const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
     const contract = client.open(wallet);
+    
     const balance = await contract.getBalance();
-    const amountToSend = toNano(amt.toString());
-    const feeReserve = toNano("0.05");
+    const amountInNano = toNano(amount.toString());
 
-    if (balance < (amountToSend + feeReserve)) {
-      return res.status(200).json({ 
-        success: false, 
-        error: "Saldo insuficiente. Balance detectado: " + fromNano(balance) + " TON." 
-      });
+    // Validar que el admin tenga saldo suficiente (monto + pequeño margen de gas)
+    if (balance < (amountInNano + toNano("0.02"))) {
+      return res.status(200).json({ error: "Saldo de administrador insuficiente" });
     }
 
     const seqno = await contract.getSeqno();
+
     const transfer = await contract.createTransfer({
       seqno,
-      secretKey: keyPair.secretKey, // Aquí ya van los 64 bytes exactos
+      secretKey: keyPair.secretKey,
       messages: [
         internal({
-          to: recipientAddress,
-          value: amountToSend,
+          to: userAddress,
+          value: amountInNano,
           bounce: false,
-          body: "@kubaPayBot", 
+          body: "Retiro KubaPay",
         })
       ]
     });
 
     await contract.send(transfer);
-    res.status(200).json({ success: true, amount: amt });
-    
+
+    res.status(200).json({ success: true, hash: "Enviado correctamente" });
+
   } catch (error) {
-    // Si sigue dando error de tamaño, capturamos qué parte del código lo lanza
-    res.status(200).json({ success: false, error: "Error Cripto: " + error.message });
+    res.status(500).json({ error: error.message });
   }
-  }
+          }
