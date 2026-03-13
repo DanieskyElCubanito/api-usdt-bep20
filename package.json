@@ -4,14 +4,14 @@
   "description": "API para depósitos y retiros",
   "main": "index.js",
   "dependencies": {
-    "@ton/ton": "^13.11.1",
-    "@ton/crypto": "^3.2.0",
+    "@ton/ton": "^15.1.0",
+    "@ton/crypto": "^3.3.0",
     "ethers": "^6.11.1",
     "tronweb": "^5.3.0",
     "node-fetch": "^3.3.2",
     "buffer": "^6.0.3"
   },
   "engines": {
-    "node": "22.x" 
+    "node": "22.x"
   }
 }
