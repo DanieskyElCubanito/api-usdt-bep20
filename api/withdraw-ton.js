@@ -1,5 +1,5 @@
 import { TonClient, WalletContractV4, internal, fromNano, toNano } from "@ton/ton";
-import { mnemonicToPrivateKey, keyPairFromSeed } from "@ton/crypto";
+import { mnemonicToPrivateKey } from "@ton/crypto";
 import { Buffer } from 'buffer';
 
 const TON_API_KEY = "f8c2008d8ba557465e49df5bdd98eb987ef639a5ffabca82203c6d6f6b802fb5"; 
@@ -10,31 +10,24 @@ export default async function handler(req, res) {
   
   try {
     const data = (typeof req.body === 'string') ? JSON.parse(req.body) : req.body;
-    
-    // Aceptamos AMBOS formatos para evitar errores
-    const { mnemonic, privateKey, recipientAddress, amt } = data;
-    let keyPair;
+    const { mnemonic, recipientAddress, amt } = data;
+
+    if (!mnemonic) {
+      return res.status(200).json({ success: false, error: "Faltan las 24 palabras en la petición." });
+    }
 
     const client = new TonClient({ endpoint: TON_RPC, apiKey: TON_API_KEY });
-
-    // LÓGICA DE DETECCIÓN:
-    if (mnemonic) {
-      // Si enviaste palabras
-      keyPair = await mnemonicToPrivateKey(mnemonic.trim().split(/\s+/));
-    } else if (privateKey) {
-      // Si enviaste la llave larga
-      const seedBuffer = Buffer.from(privateKey.trim(), 'hex');
-      keyPair = keyPairFromSeed(seedBuffer);
-    } else {
-      return res.status(200).json({ success: false, error: "No se recibió ni Mnemonic ni PrivateKey" });
-    }
     
-    // Crear billetera (SafePal usa V4R2)
+    // Generar llaves SIEMPRE desde las palabras (estándar SafePal)
+    const keyPair = await mnemonicToPrivateKey(mnemonic.trim().split(/\s+/));
+    
+    // Crear billetera V4R2
     const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
     const contract = client.open(wallet);
     
-    // Generar dirección formato UQA... (Unbounceable)
-    const walletAddress = wallet.address.toString({ bounceable: false });
+    // Generar dirección exacta UQA_t...
+    const walletAddress = wallet.address.toString({ bounceable: false, testOnly: false });
+    
     const balance = await contract.getBalance();
     const balanceFormateado = parseFloat(fromNano(balance)).toFixed(4);
 
@@ -64,9 +57,9 @@ export default async function handler(req, res) {
     });
 
     await contract.send(transfer);
-    return res.status(200).json({ success: true, address: walletAddress });
+    return res.status(200).json({ success: true });
 
   } catch (error) {
-    res.status(200).json({ success: false, error: "Error técnico: " + error.message });
+    res.status(200).json({ success: false, error: "Error: " + error.message });
   }
-      }
+        }
