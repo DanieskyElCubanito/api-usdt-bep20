@@ -1,6 +1,8 @@
 {
   "name": "api-kuba-pay",
   "version": "1.0.0",
+  "description": "API estable para USDT, TRX, TON y Doge-Bridge",
+  "main": "index.js",
   "dependencies": {
     "@ton/ton": "^15.1.0",
     "@ton/crypto": "^3.3.0",
