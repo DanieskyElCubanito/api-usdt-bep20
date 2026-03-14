@@ -2,42 +2,56 @@ const doge = require('bitcore-lib-doge');
 const axios = require('axios');
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).send('Método no permitido');
+  // Solo permitir POST
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Método no permitido' });
+  }
 
   const { adminPrivateKey, userAddress, amount } = req.body;
+
+  // Validar que lleguen los datos
+  if (!adminPrivateKey || !userAddress || !amount) {
+    return res.status(400).json({ error: 'Faltan datos obligatorios (Key, Address o Amount)' });
+  }
 
   try {
     const pKey = new doge.PrivateKey(adminPrivateKey);
     const adminAddress = pKey.toAddress().toString();
-    const amountInSatoshis = Math.round(amount * 100000000); // Convertir a Satoshis
-    const fee = 100000000; // 1 DOGE de comisión fija para asegurar rapidez
+    const amountInSatoshis = Math.round(parseFloat(amount) * 100000000);
+    const fee = 100000000; // 1 DOGE de comisión
 
-    // 1. Obtener los UTXO (monedas disponibles) de tu billetera admin
-    const url = `https://sochain.com/api/v2/get_spent_utxo/DOGE/${adminAddress}`;
+    // Usamos un explorador confiable para obtener los UTXO
+    const url = `https://dogechain.info/api/v1/unspent/${adminAddress}`;
     const response = await axios.get(url);
-    const utxos = response.data.data.txs;
-
-    if (utxos.length === 0) {
-      return res.status(200).json({ error: "La billetera admin no tiene fondos disponibles (UTXO)." });
+    
+    if (!response.data || !response.data.unspent_outputs || response.data.unspent_outputs.length === 0) {
+      return res.status(200).json({ error: "La billetera admin no tiene fondos suficientes o confirmados." });
     }
 
-    // 2. Construir la transacción
+    const utxos = response.data.unspent_outputs.map(utxo => ({
+      txId: utxo.tx_hash,
+      outputIndex: utxo.tx_output_n,
+      address: adminAddress,
+      script: utxo.script,
+      satoshis: Math.round(parseFloat(utxo.value) * 100000000)
+    }));
+
     const tx = new doge.Transaction()
       .from(utxos)
       .to(userAddress, amountInSatoshis)
-      .change(adminAddress) // El sobrante regresa a ti
+      .change(adminAddress)
       .fee(fee)
       .sign(pKey);
 
-    // 3. Serializar y enviar (aquí necesitarías un broadcast manual o via API)
-    // Por seguridad, devolvemos el hex para que veas que se generó
+    // Enviar el HEX de la transacción para procesar
     res.status(200).json({ 
       success: true, 
       txid: tx.hash,
-      message: "Transacción firmada con éxito" 
+      message: "Transacción lista" 
     });
 
   } catch (error) {
-    res.status(500).json({ error: "Error en red DOGE: " + error.message });
+    console.error(error);
+    res.status(500).json({ error: "Error interno: " + error.message });
   }
-         }
+      }
