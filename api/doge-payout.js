@@ -10,9 +10,6 @@ const DOGE_NETWORK = {
   wif: 0x9e
 };
 
-// REEMPLAZA ESTO CON TU TOKEN DE BLOCKCYPHER
-const TOKEN = "TU_TOKEN_AQUI";
-
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Solo POST' });
 
@@ -27,24 +24,26 @@ module.exports = async (req, res) => {
       return res.status(200).json({ success: false, debug: `Wallet: ${address}` });
     }
 
-    // 1. Obtener UTXOs desde BlockCypher (Evita el error 403)
-    const utxoRes = await axios.get(`https://api.blockcypher.com/v1/doge/main/addrs/${address}?unspentOnly=true&token=${TOKEN}`);
-    const utxos = utxoRes.data.txrefs;
+    // 1. Obtener UTXOs desde SoChain (No requiere Token)
+    const utxoRes = await axios.get(`https://sochain.com/api/v2/get_spent_txos/DOGE/${address}`);
+    
+    // SoChain devuelve los datos un poco diferente, los filtramos:
+    const utxos = utxoRes.data.data.txs.filter(t => t.value > 0);
 
-    if (!utxos || utxos.length === 0) throw new Error("No tienes fondos suficientes (UTXOs vacíos).");
+    if (!utxos || utxos.length === 0) throw new Error("No tienes fondos (UTXOs) suficientes.");
 
     const txb = new bitcoin.TransactionBuilder(DOGE_NETWORK);
     const satoshisToSend = Math.floor(amt * 100000000);
-    const fee = 100000000; // 1 DOGE
+    const fee = 100000000; // 1 DOGE de comisión
     let totalInput = 0;
 
     utxos.forEach(u => {
-      totalInput += u.value;
-      txb.addInput(u.tx_hash, u.tx_output_n);
+      totalInput += Math.floor(parseFloat(u.value) * 100000000);
+      txb.addInput(u.txid, u.output_no);
     });
 
     const change = totalInput - satoshisToSend - fee;
-    if (change < 0) throw new Error("Fondos insuficientes para envío + comisión.");
+    if (change < 0) throw new Error("Saldo insuficiente para envío + comisión de red.");
 
     txb.addOutput(recipientAddress, satoshisToSend);
     if (change > 54600) txb.addOutput(address, change);
@@ -53,19 +52,19 @@ module.exports = async (req, res) => {
 
     const txHex = txb.build().toHex();
 
-    // 2. Transmitir vía BlockCypher
-    const broadcast = await axios.post(`https://api.blockcypher.com/v1/doge/main/txs/push?token=${TOKEN}`, { tx: txHex });
+    // 2. Transmitir la transacción
+    const broadcast = await axios.post(`https://sochain.com/api/v2/send_tx/DOGE`, { tx_hex: txHex });
 
     return res.status(200).json({
       success: true,
-      txid: broadcast.data.tx.hash,
+      txid: broadcast.data.data.txid,
       from: address
     });
 
   } catch (err) {
     return res.status(200).json({ 
       success: false, 
-      error: "Error API: " + (err.response?.data?.error || err.message) 
+      error: "Error API: " + (err.response?.data?.data?.error_message || err.message) 
     });
   }
 };
