@@ -1,12 +1,16 @@
 {
   "name": "api-kuba-pay",
   "version": "1.0.0",
+  "description": "API para depósitos y retiros",
+  "main": "index.js",
   "dependencies": {
     "@ton/ton": "^15.1.0",
     "@ton/crypto": "^3.3.0",
     "ethers": "^6.11.1",
     "tronweb": "^5.3.0",
-    "axios": "^1.6.7"
+    "bitcore-lib-doge": "8.25.10",
+    "axios": "^1.6.7",
+    "buffer": "^6.0.3"
   },
   "engines": {
     "node": "20.x"
