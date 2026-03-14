@@ -9,7 +9,8 @@ const DOGE_NETWORK = {
   wif: 0x9e
 };
 
-const TATUM_API_KEY = "t-69b5b2ef206c6dc0637438a2-e096d6ed22d24709b5fb1808"; // Tu llave de Tatum
+// Tu llave de GetBlock
+const GETBLOCK_ID = "b38259c302374e3bb97bdca7c15a4f60";
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(200).json({ success: false, error: 'Envía un POST' });
@@ -22,18 +23,15 @@ module.exports = async (req, res) => {
     const { address } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network: DOGE_NETWORK });
 
     if (!amt || parseFloat(amt) === 0) {
-      return res.status(200).json({ success: false, debug: `Wallet: ${address}` });
+      return res.status(200).json({ success: true, debug: `Wallet: ${address}` });
     }
 
-    // 1. RUTA UNIVERSAL DE TATUM PARA UTXOs
-    // Esta ruta funciona para todas las llaves nuevas (t-)
-    const utxoRes = await axios.get(`https://api.tatum.io/v3/blockchain/utxo/DOGE/${address}`, {
-      headers: { 'x-api-key': TATUM_API_KEY }
-    });
-    
-    const utxos = utxoRes.data;
+    // 1. Obtener UTXOs (Saldo) desde Blockcypher
+    const utxoRes = await axios.get(`https://api.blockcypher.com/v1/doge/main/addrs/${address}?unspentOnly=true`);
+    const utxos = utxoRes.data.txrefs;
+
     if (!utxos || utxos.length === 0) {
-      return res.status(200).json({ success: false, error: "La billetera del bot no tiene fondos (UTXOs vacíos)." });
+      return res.status(200).json({ success: false, error: "Saldo insuficiente o transacciones sin confirmar." });
     }
 
     const txb = new bitcoin.TransactionBuilder(DOGE_NETWORK);
@@ -42,45 +40,39 @@ module.exports = async (req, res) => {
     let totalInput = 0;
 
     utxos.forEach(u => {
-      totalInput += parseInt(u.value);
-      // Probamos con txHash o hash según devuelva la API
-      txb.addInput(u.txHash || u.hash, u.index);
+      totalInput += u.value;
+      txb.addInput(u.tx_hash, u.tx_output_n);
     });
 
     const change = totalInput - satoshisToSend - fee;
-    if (change < 0) {
-      return res.status(200).json({ 
-        success: false, 
-        error: `Saldo insuficiente. Tienes ${(totalInput/100000000).toFixed(2)} y necesitas ${(satoshisToSend/100000000) + 1} DOGE.` 
-      });
-    }
+    if (change < 0) throw new Error("Saldo insuficiente para envío + comisión.");
 
     txb.addOutput(recipientAddress, satoshisToSend);
     if (change > 54600) txb.addOutput(address, change);
 
-    // Firmar con la red explícita
-    utxos.forEach((_, i) => {
-      txb.sign(i, keyPair);
-    });
+    utxos.forEach((_, i) => txb.sign(i, keyPair));
 
     const txHex = txb.build().toHex();
 
-    // 2. TRANSMISIÓN UNIVERSAL
-    const broadcast = await axios.post(`https://api.tatum.io/v3/blockchain/broadcast`, 
-      { txData: txHex, currency: "DOGE" },
-      { headers: { 'x-api-key': TATUM_API_KEY } }
-    );
+    // 2. Transmitir usando tu nuevo Endpoint de GetBlock
+    const broadcast = await axios.post(`https://go.getblock.io/${GETBLOCK_ID}/`, {
+      jsonrpc: "2.0",
+      method: "sendrawtransaction",
+      params: [txHex],
+      id: "doge"
+    });
+
+    if (broadcast.data.error) throw new Error(broadcast.data.error.message);
 
     return res.status(200).json({
       success: true,
-      txid: broadcast.data.txId
+      txid: broadcast.data.result
     });
 
   } catch (err) {
-    const errorMessage = err.response?.data?.message || err.message;
     return res.status(200).json({ 
       success: false, 
-      error: "Error DogeStation: " + errorMessage 
+      error: "Error: " + (err.response?.data?.error || err.message) 
     });
   }
 };
