@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
   try {
     // 1. Verificación de saldo previa (Para que el bot siempre responda algo útil)
-    const adminAddr = "D72df5nykpUPgZ4vFmUaUYUTuxA8ndyqrS"; // Tu wallet de las fotos
+    const adminAddr = "DL5UYjJ9rP6ACSRnRk7ANQxVRF4GKtfs56"; // Tu wallet de las fotos
     const balanceCheck = await axios.get(`https://dogechain.info/api/v1/address/balance/${adminAddr}`);
     
     if (parseFloat(balanceCheck.data.balance) < parseFloat(amount)) {
