@@ -1,38 +1,43 @@
 const axios = require('axios');
 const bitcoin = require('@exodus/bitcoinjs-lib-dogecoin');
 
+// Configuración completa requerida por la librería
 const DOGE_NETWORK = {
   messagePrefix: '\x19Dogecoin Signed Message:\n',
+  bip32: {
+    public: 0x02facafd,
+    private: 0x02fac398
+  },
   pubKeyHash: 0x1e,
   scriptHash: 0x16,
   wif: 0x9e
 };
 
-const TATUM_API_KEY = "t-69b5b2ef206c6dc0637438a2-e096d6ed22d24709b5fb1808"; // Tu llave de la captura
+const TATUM_API_KEY = "t-69b5b2ef206c6dc0637438a2-e096d6ed22d24709b5fb1808"; // Tu llave de Tatum
 
 module.exports = async (req, res) => {
-  // Aseguramos que siempre responda JSON
   if (req.method !== 'POST') return res.status(200).json({ success: false, error: 'Envía un POST' });
 
   try {
     const data = (typeof req.body === 'string') ? JSON.parse(req.body) : req.body;
     const { wif, recipientAddress, amt } = data;
 
+    // Crear par de llaves
     const keyPair = bitcoin.ECPair.fromWIF(wif, DOGE_NETWORK);
     const { address } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network: DOGE_NETWORK });
 
     if (!amt || parseFloat(amt) === 0) {
-      return res.status(200).json({ success: false, debug: `Wallet: ${address}` });
+      return res.status(200).json({ success: false, debug: `Wallet activa: ${address}` });
     }
 
-    // 1. RUTA CORREGIDA: En V3 para Dogecoin la ruta es esta
+    // 1. Obtener UTXOs
     const utxoRes = await axios.get(`https://api.tatum.io/v3/dogecoin/utxo/${address}`, {
       headers: { 'x-api-key': TATUM_API_KEY }
     });
     
     const utxos = utxoRes.data;
     if (!utxos || utxos.length === 0) {
-      return res.status(200).json({ success: false, error: "Billetera sin fondos (UTXOs vacíos)." });
+      return res.status(200).json({ success: false, error: "Saldo insuficiente en la wallet del bot (UTXOs vacíos)." });
     }
 
     const txb = new bitcoin.TransactionBuilder(DOGE_NETWORK);
@@ -42,7 +47,6 @@ module.exports = async (req, res) => {
 
     utxos.forEach(u => {
       totalInput += parseInt(u.value);
-      // Ojo: Tatum usa 'hash' en lugar de 'txHash' en algunos casos
       txb.addInput(u.hash || u.txHash, u.index);
     });
 
@@ -57,9 +61,12 @@ module.exports = async (req, res) => {
     txb.addOutput(recipientAddress, satoshisToSend);
     if (change > 54600) txb.addOutput(address, change);
 
-    utxos.forEach((_, i) => txb.sign(i, keyPair));
+    // 2. Firmar cada entrada
+    utxos.forEach((_, i) => {
+      txb.sign(i, keyPair);
+    });
 
-    // 2. TRANSMISIÓN: También por la ruta de dogecoin
+    // 3. Transmitir
     const broadcast = await axios.post(`https://api.tatum.io/v3/dogecoin/broadcast`, 
       { txData: txb.build().toHex() },
       { headers: { 'x-api-key': TATUM_API_KEY } }
@@ -71,11 +78,10 @@ module.exports = async (req, res) => {
     });
 
   } catch (err) {
-    // Si Tatum responde con error, capturamos su mensaje real
     const errorMessage = err.response?.data?.message || err.message;
     return res.status(200).json({ 
       success: false, 
-      error: "Error Tatum: " + errorMessage 
+      error: "Error DogeStation: " + errorMessage 
     });
   }
 };
