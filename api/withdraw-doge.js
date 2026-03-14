@@ -52,4 +52,4 @@ export default async function handler(req, res) {
     // Esto enviará el error real a Bots.Business en lugar de romper Vercel
     res.status(200).json({ error: "Fallo en API: " + error.message });
   }
-  }
+}
