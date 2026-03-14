@@ -7,49 +7,63 @@ export default async function handler(req, res) {
   const { adminPrivateKey, userAddress, amount } = req.body;
 
   try {
-    // 1. Validar Clave Privada
-    if (!doge.PrivateKey.isValid(adminPrivateKey)) {
-      return res.status(200).json({ error: "La clave privada de administrador no es válida." });
-    }
-
     const pKey = new doge.PrivateKey(adminPrivateKey);
     const adminAddress = pKey.toAddress().toString();
-    const amountInSatoshis = Math.round(parseFloat(amount) * 100000000);
-    const fee = 100000000; // 1 DOGE de comisión fija
+    
+    // Convertimos todo a Satoshis para evitar errores decimales
+    const amountSat = Math.round(parseFloat(amount) * 100000000);
+    const feeSat = 100000000; // 1 DOGE (puedes bajarlo a 0.1 si prefieres)
+    const totalNeeded = amountSat + feeSat;
 
-    // 2. Obtener UTXO desde un explorador estable
+    // Consultamos el explorador
     const url = `https://chain.so/api/v2/get_unspent_utxo/DOGE/${adminAddress}`;
     const resp = await axios.get(url);
-    
-    if (!resp.data.data.txs || resp.data.data.txs.length === 0) {
-      return res.status(200).json({ error: "La billetera admin no tiene fondos suficientes (UTXOs)." });
+    const utxosRaw = resp.data.data.txs;
+
+    if (!utxosRaw || utxosRaw.length === 0) {
+      return res.status(200).json({ 
+        error: `Saldo insuficiente en la Wallet Admin. Saldo actual: 0 DOGE. Dirección: ${adminAddress}` 
+      });
     }
 
-    // 3. Formatear UTXOs para Bitcore
-    const utxos = resp.data.data.txs.map(u => ({
-      address: adminAddress,
-      txId: u.txid,
-      outputIndex: u.output_no,
-      script: u.script_asm, // Usamos el script ASM que es más estable
-      satoshis: Math.round(parseFloat(u.value) * 100000000)
-    }));
+    // Calculamos saldo total disponible
+    let totalAvailableSat = 0;
+    const utxos = utxosRaw.map(u => {
+      const sats = Math.round(parseFloat(u.value) * 100000000);
+      totalAvailableSat += sats;
+      return {
+        txId: u.txid,
+        outputIndex: u.output_no,
+        address: adminAddress,
+        script: u.script_asm,
+        satoshis: sats
+      };
+    });
 
-    // 4. Crear transacción manual para evitar errores de librería
+    // VALIDACIÓN MANUAL DE SALDO
+    if (totalAvailableSat < totalNeeded) {
+      const saldoDoge = (totalAvailableSat / 100000000).toFixed(4);
+      return res.status(200).json({ 
+        error: `Saldo insuficiente en la Wallet de la API. Tienes ${saldoDoge} DOGE, pero necesitas ${amount} + ${feeSat/100000000} de comisión.` 
+      });
+    }
+
+    // 3. Si hay saldo, creamos la transacción
     const tx = new doge.Transaction()
       .from(utxos)
-      .to(userAddress, amountInSatoshis)
-      .fee(fee)
+      .to(userAddress, amountSat)
+      .fee(feeSat)
       .change(adminAddress)
       .sign(pKey);
 
     res.status(200).json({ 
       success: true, 
       txid: tx.hash,
-      message: "Retiro procesado correctamente" 
+      message: "Retiro enviado" 
     });
 
   } catch (error) {
-    // Esto enviará el error real a Bots.Business en lugar de romper Vercel
-    res.status(200).json({ error: "Fallo en API: " + error.message });
+    // Si algo falla, enviamos el error como JSON, no como crash
+    res.status(200).json({ error: "Error en el proceso: " + error.message });
   }
-}
+      }
