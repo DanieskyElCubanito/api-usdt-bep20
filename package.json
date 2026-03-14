@@ -1,7 +1,7 @@
 {
   "name": "api-kuba-pay",
   "version": "1.0.0",
-  "description": "API para depósitos y retiros",
+  "description": "API Multimoneda: USDT, TRX, TON y DOGE",
   "main": "index.js",
   "dependencies": {
     "@ton/ton": "^15.1.0",
@@ -13,6 +13,6 @@
     "buffer": "^6.0.3"
   },
   "engines": {
-    "node": "20.x"
+    "node": ">=20.x"
   }
 }
