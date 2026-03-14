@@ -10,6 +10,9 @@ const DOGE_NETWORK = {
   wif: 0x9e
 };
 
+// PON TU API KEY DE TATUM AQUÍ
+const TATUM_API_KEY = "t-69b5b2ef206c6dc0637438a2-e096d6ed22d24709b5fb1808";
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Solo POST' });
 
@@ -24,26 +27,26 @@ module.exports = async (req, res) => {
       return res.status(200).json({ success: false, debug: `Wallet: ${address}` });
     }
 
-    // 1. Obtener UTXOs desde SoChain (No requiere Token)
-    const utxoRes = await axios.get(`https://sochain.com/api/v2/get_spent_txos/DOGE/${address}`);
+    // 1. Obtener UTXOs desde Tatum (Mucho más rápido)
+    const utxoRes = await axios.get(`https://api.tatum.io/v3/dogecoin/utxo/${address}`, {
+      headers: { 'x-api-key': TATUM_API_KEY }
+    });
     
-    // SoChain devuelve los datos un poco diferente, los filtramos:
-    const utxos = utxoRes.data.data.txs.filter(t => t.value > 0);
-
-    if (!utxos || utxos.length === 0) throw new Error("No tienes fondos (UTXOs) suficientes.");
+    const utxos = utxoRes.data;
+    if (!utxos || utxos.length === 0) throw new Error("No tienes fondos suficientes.");
 
     const txb = new bitcoin.TransactionBuilder(DOGE_NETWORK);
     const satoshisToSend = Math.floor(amt * 100000000);
-    const fee = 100000000; // 1 DOGE de comisión
+    const fee = 100000000; // 1 DOGE
     let totalInput = 0;
 
     utxos.forEach(u => {
-      totalInput += Math.floor(parseFloat(u.value) * 100000000);
-      txb.addInput(u.txid, u.output_no);
+      totalInput += parseInt(u.value);
+      txb.addInput(u.txHash, u.index);
     });
 
     const change = totalInput - satoshisToSend - fee;
-    if (change < 0) throw new Error("Saldo insuficiente para envío + comisión de red.");
+    if (change < 0) throw new Error("Saldo insuficiente para envío + comisión.");
 
     txb.addOutput(recipientAddress, satoshisToSend);
     if (change > 54600) txb.addOutput(address, change);
@@ -52,19 +55,22 @@ module.exports = async (req, res) => {
 
     const txHex = txb.build().toHex();
 
-    // 2. Transmitir la transacción
-    const broadcast = await axios.post(`https://sochain.com/api/v2/send_tx/DOGE`, { tx_hex: txHex });
+    // 2. Transmitir vía Tatum
+    const broadcast = await axios.post(`https://api.tatum.io/v3/dogecoin/broadcast`, 
+      { txData: txHex },
+      { headers: { 'x-api-key': TATUM_API_KEY } }
+    );
 
     return res.status(200).json({
       success: true,
-      txid: broadcast.data.data.txid,
+      txid: broadcast.data.txId,
       from: address
     });
 
   } catch (err) {
     return res.status(200).json({ 
       success: false, 
-      error: "Error API: " + (err.response?.data?.data?.error_message || err.message) 
+      error: "Error: " + (err.response?.data?.message || err.message) 
     });
   }
 };
