@@ -9,6 +9,8 @@
     "ethers": "^6.11.1",
     "tronweb": "^5.3.0",
     "bitcoinjs-lib": "^6.1.5",
+    "ecpair": "^2.1.0",
+    "@bitcoinerlab/secp256k1": "^1.1.1",
     "coininfo": "^5.2.1",
     "node-fetch": "^3.3.2",
     "axios": "^1.6.7",
