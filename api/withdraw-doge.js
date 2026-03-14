@@ -7,48 +7,51 @@ export default async function handler(req, res) {
   const { adminPrivateKey, userAddress, amount } = req.body;
 
   try {
+    // Validar datos de entrada
+    if (!adminPrivateKey || !userAddress || !amount) {
+      return res.status(200).json({ error: "Faltan datos en la solicitud." });
+    }
+
     const pKey = new doge.PrivateKey(adminPrivateKey);
     const adminAddress = pKey.toAddress().toString();
     
-    // Convertimos todo a Satoshis para evitar errores decimales
     const amountSat = Math.round(parseFloat(amount) * 100000000);
-    const feeSat = 100000000; // 1 DOGE (puedes bajarlo a 0.1 si prefieres)
+    const feeSat = 100000000; // 1 DOGE
     const totalNeeded = amountSat + feeSat;
 
-    // Consultamos el explorador
-    const url = `https://chain.so/api/v2/get_unspent_utxo/DOGE/${adminAddress}`;
+    // Usamos el explorador oficial de Dogechain para los UTXO
+    const url = `https://dogechain.info/api/v1/unspent/${adminAddress}`;
     const resp = await axios.get(url);
-    const utxosRaw = resp.data.data.txs;
+    const data = resp.data;
 
-    if (!utxosRaw || utxosRaw.length === 0) {
-      return res.status(200).json({ 
-        error: `Saldo insuficiente en la Wallet Admin. Saldo actual: 0 DOGE. Dirección: ${adminAddress}` 
-      });
+    if (!data || !data.unspent_outputs || data.unspent_outputs.length === 0) {
+       return res.status(200).json({ 
+         error: `Saldo insuficiente. Tu wallet de la API (${adminAddress}) tiene 0 DOGE.` 
+       });
     }
 
-    // Calculamos saldo total disponible
     let totalAvailableSat = 0;
-    const utxos = utxosRaw.map(u => {
+    const utxos = data.unspent_outputs.map(u => {
       const sats = Math.round(parseFloat(u.value) * 100000000);
       totalAvailableSat += sats;
       return {
-        txId: u.txid,
-        outputIndex: u.output_no,
+        txId: u.tx_hash,
+        outputIndex: u.tx_output_n,
         address: adminAddress,
-        script: u.script_asm,
+        script: u.script,
         satoshis: sats
       };
     });
 
-    // VALIDACIÓN MANUAL DE SALDO
+    // Validación de saldo manual
     if (totalAvailableSat < totalNeeded) {
-      const saldoDoge = (totalAvailableSat / 100000000).toFixed(4);
+      const actualDoge = (totalAvailableSat / 100000000).toFixed(4);
       return res.status(200).json({ 
-        error: `Saldo insuficiente en la Wallet de la API. Tienes ${saldoDoge} DOGE, pero necesitas ${amount} + ${feeSat/100000000} de comisión.` 
+        error: `Saldo insuficiente en API. Tienes ${actualDoge} DOGE, pero el retiro + comisión requieren ${totalNeeded / 100000000} DOGE.` 
       });
     }
 
-    // 3. Si hay saldo, creamos la transacción
+    // Construcción de la transacción
     const tx = new doge.Transaction()
       .from(utxos)
       .to(userAddress, amountSat)
@@ -59,11 +62,11 @@ export default async function handler(req, res) {
     res.status(200).json({ 
       success: true, 
       txid: tx.hash,
-      message: "Retiro enviado" 
+      message: "Retiro procesado" 
     });
 
   } catch (error) {
-    // Si algo falla, enviamos el error como JSON, no como crash
-    res.status(200).json({ error: "Error en el proceso: " + error.message });
+    // Si el error es de la librería bitcore, lo capturamos aquí para que no rompa Vercel
+    res.status(200).json({ error: "Error técnico en la API: " + error.message });
   }
-      }
+}
