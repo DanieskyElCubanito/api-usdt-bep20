@@ -1,72 +1,70 @@
-const doge = require('bitcore-lib-doge');
+const bitcoin = require('bitcoinjs-lib');
+const { ECPairFactory } = require('ecpair');
+const tinysecp = require('tiny-secp256k1');
 const axios = require('axios');
+
+const ECPair = ECPairFactory(tinysecp);
+
+// Configuración de red Dogecoin
+const DOGECOIN = {
+  messagePrefix: '\x19Dogecoin Signed Message:\n',
+  bech32: 'dg',
+  bip32: { public: 0x02facafd, private: 0x02fac398 },
+  pubKeyHash: 0x1e,
+  scriptHash: 0x16,
+  wif: 0x9e,
+};
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Solo POST' });
-
   const { adminPrivateKey, userAddress, amount } = req.body;
 
   try {
-    // Validar datos de entrada
-    if (!adminPrivateKey || !userAddress || !amount) {
-      return res.status(200).json({ error: "Faltan datos en la solicitud." });
-    }
-
-    const pKey = new doge.PrivateKey(adminPrivateKey);
-    const adminAddress = pKey.toAddress().toString();
+    const keyPair = ECPair.fromWIF(adminPrivateKey, DOGECOIN);
+    const { address: adminAddress } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network: DOGECOIN });
     
     const amountSat = Math.round(parseFloat(amount) * 100000000);
-    const feeSat = 100000000; // 1 DOGE
+    const feeSat = 100000000; // 1 DOGE de comisión
     const totalNeeded = amountSat + feeSat;
 
-    // Usamos el explorador oficial de Dogechain para los UTXO
+    // Obtener UTXOs
     const url = `https://dogechain.info/api/v1/unspent/${adminAddress}`;
     const resp = await axios.get(url);
     const data = resp.data;
 
     if (!data || !data.unspent_outputs || data.unspent_outputs.length === 0) {
-       return res.status(200).json({ 
-         error: `Saldo insuficiente. Tu wallet de la API (${adminAddress}) tiene 0 DOGE.` 
-       });
+      return res.status(200).json({ error: `Saldo insuficiente. Tu wallet (${adminAddress}) tiene 0 DOGE.` });
     }
 
-    let totalAvailableSat = 0;
-    const utxos = data.unspent_outputs.map(u => {
-      const sats = Math.round(parseFloat(u.value) * 100000000);
-      totalAvailableSat += sats;
-      return {
-        txId: u.tx_hash,
-        outputIndex: u.tx_output_n,
-        address: adminAddress,
-        script: u.script,
-        satoshis: sats
-      };
-    });
+    const psbt = new bitcoin.Psbt({ network: DOGECOIN });
+    let inputSum = 0;
 
-    // Validación de saldo manual
-    if (totalAvailableSat < totalNeeded) {
-      const actualDoge = (totalAvailableSat / 100000000).toFixed(4);
-      return res.status(200).json({ 
-        error: `Saldo insuficiente en API. Tienes ${actualDoge} DOGE, pero el retiro + comisión requieren ${totalNeeded / 100000000} DOGE.` 
+    for (const utxo of data.unspent_outputs) {
+      const txResp = await axios.get(`https://dogechain.info/api/v1/tx/hex/${utxo.tx_hash}`);
+      psbt.addInput({
+        hash: utxo.tx_hash,
+        index: utxo.tx_output_n,
+        nonWitnessUtxo: Buffer.from(txResp.data.hex, 'hex'),
       });
+      inputSum += Math.round(parseFloat(utxo.value) * 100000000);
+      if (inputSum >= totalNeeded) break;
     }
 
-    // Construcción de la transacción
-    const tx = new doge.Transaction()
-      .from(utxos)
-      .to(userAddress, amountSat)
-      .fee(feeSat)
-      .change(adminAddress)
-      .sign(pKey);
+    if (inputSum < totalNeeded) {
+      return res.status(200).json({ error: `Saldo insuficiente. Tienes ${(inputSum/1e8).toFixed(2)} y necesitas ${(totalNeeded/1e8).toFixed(2)}` });
+    }
 
-    res.status(200).json({ 
-      success: true, 
-      txid: tx.hash,
-      message: "Retiro procesado" 
-    });
+    psbt.addOutput({ address: userAddress, value: amountSat });
+    const change = inputSum - amountSat - feeSat;
+    if (change > 0) psbt.addOutput({ address: adminAddress, value: change });
+
+    psbt.signAllInputs(keyPair);
+    psbt.finalizeAllInputs();
+    const txHex = psbt.extractTransaction().toHex();
+
+    res.status(200).json({ success: true, txid: psbt.extractTransaction().getId(), hex: txHex });
 
   } catch (error) {
-    // Si el error es de la librería bitcore, lo capturamos aquí para que no rompa Vercel
-    res.status(200).json({ error: "Error técnico en la API: " + error.message });
+    res.status(200).json({ error: "Error técnico: " + error.message });
   }
-}
+                                  }
