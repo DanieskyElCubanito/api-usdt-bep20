@@ -36,8 +36,8 @@ module.exports = async (req, res) => {
 
     const txb = new bitcoin.TransactionBuilder(DOGE_NETWORK);
     const satoshisToSend = Math.floor(amt * 100000000);
-    // Para una comisión de 0.009 DOGE
-const fee = 900000; 
+    // Para una comisión de 0.01 DOGE
+const fee = 1000000; 
     let totalInput = 0;
 
     utxos.forEach(u => {
