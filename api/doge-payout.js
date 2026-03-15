@@ -31,7 +31,7 @@ module.exports = async (req, res) => {
     const utxos = utxoRes.data.txrefs;
 
     if (!utxos || utxos.length === 0) {
-      return res.status(200).json({ success: false, error: "Saldo insuficiente o transacciones sin confirmar." });
+      return res.status(200).json({ success: false, error: "Hay una transacción en proceso, por favor espera unos minutos y vuelves a intentarlo." });
     }
 
     const txb = new bitcoin.TransactionBuilder(DOGE_NETWORK);
@@ -46,7 +46,7 @@ const fee = 1000000;
     });
 
     const change = totalInput - satoshisToSend - fee;
-    if (change < 0) throw new Error("Saldo insuficiente para envío + comisión.");
+    if (change < 0) throw new Error("No contamos con suficientes fondos para esta transacción.");
 
     txb.addOutput(recipientAddress, satoshisToSend);
     if (change > 54600) txb.addOutput(address, change);
