@@ -34,7 +34,7 @@ export default async function handler(req, res) {
           to: recipientAddress,
           value: amountToSend,
           bounce: false,
-          body: "@KubaPaybot", // Mensaje profesional
+          body: "KubaPaybot", // Mensaje profesional
         })
       ]
     });
