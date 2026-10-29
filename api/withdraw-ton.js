@@ -1,65 +1,43 @@
-import { TonClient, WalletContractV5R1, fromNano, toNano, internal } from "@ton/ton";
-import { mnemonicToPrivateKey } from "@ton/crypto";
-import { Buffer } from 'buffer';
-
-const TON_API_KEY = "f8c2008d8ba557465e49df5bdd98eb987ef639a5ffabca82203c6d6f6b802fb5"; 
-const TON_RPC = "https://toncenter.com/api/v2/jsonRPC";
+const TronWeb = require('tronweb');
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Solo POST' });
-  
-  try {
-    const data = (typeof req.body === 'string') ? JSON.parse(req.body) : req.body;
-    const { mnemonic, recipientAddress, amt } = data;
+    // 1. Configuración de Headers CORS (Estándar unificado para tu pasarela)
+    res.setHeader('Access-Control-Allow-Origin', '*'); 
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
 
-    if (!mnemonic) return res.status(200).json({ success: false, error: "Faltan las palabras semilla." });
-
-    const client = new TonClient({ endpoint: TON_RPC, apiKey: TON_API_KEY });
-    const keyPair = await mnemonicToPrivateKey(mnemonic.trim().split(/\s+/));
-    
-    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
-    const contract = client.open(wallet);
-    const walletAddress = wallet.address.toString({ bounceable: false, testOnly: false });
-    
-    // Consulta de balance rápida
-    if (!amt || parseFloat(amt) === 0) {
-      const balance = await contract.getBalance();
-      const balanceFormateado = parseFloat(fromNano(balance)).toFixed(4);
-      return res.status(200).json({ 
-        success: false, 
-        debug: `📊 <b>Billetera W5 Sincronizada</b>\n\n<b>Dirección:</b> <code>${walletAddress}</code>\n<b>Balance:</b> <code>${balanceFormateado} TON</code>`
-      });
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
     }
 
-    const amountToSend = toNano(amt.toString());
-    const seqno = await contract.getSeqno();
+    if (req.method !== 'POST' && req.method !== 'GET') {
+        return res.status(405).json({ error: 'Método no permitido' });
+    }
 
-    // Enviamos la transferencia
-    // Usamos el modo 1 (PAY_GAS_SEPARATELY) + 2 (IGNORE_ERRORS) = 3
-    await contract.sendTransfer({
-      seqno,
-      secretKey: keyPair.secretKey,
-      sendMode: 3, 
-      messages: [
-        internal({
-          to: recipientAddress,
-          value: amountToSend,
-          bounce: false,
-          body: "@KubaPayBot",
-        })
-      ]
-    });
+    try {
+        const tronWeb = new TronWeb({
+            fullHost: 'https://api.trongrid.io',
+            // Opcional pero recomendado en producción si esta instancia hace más que solo generar wallets:
+            // headers: { "TRON-PRO-API-KEY": process.env.TRONGRID_API_KEY } 
+        });
 
-    return res.status(200).json({ 
-      success: true, 
-      address: walletAddress,
-      sentAmount: amt
-    });
+        // 2. Generación de la Wallet TRX / USDT TRC20 (Funciona para ambos)
+        const account = await tronWeb.createAccount();
 
-  } catch (err) {
-    return res.status(200).json({ 
-      success: false, 
-      error: "Error técnico: " + err.message
-    });
-  }
-  }
+        // ⚠️ SEGURIDAD CRÍTICA (Arquitectura Custodial)
+        // Al igual que con las redes anteriores, la clave privada otorga control total.
+        // Encríptala y envíala directamente a tu base de datos (Supabase) vinculada al usuario.
+        // El frontend de la Mini App solo debe recibir el 'address' para generar el código QR de depósito.
+
+        // TODO: Lógica para insertar { telegramId, trxAddress, encryptedPrivateKey } en tu base de datos.
+
+        res.status(200).json({
+            success: true,
+            address: account.address.base58, // Formato estándar de Tron (empieza con 'T')
+            privateKey: account.privateKey // 🚨 Elimina esto de la respuesta al cliente en producción
+        });
+    } catch (error) {
+        console.error("Error generando wallet TRON:", error);
+        res.status(500).json({ error: "Error interno al generar la billetera TRX/TRC20." });
+    }
+}
