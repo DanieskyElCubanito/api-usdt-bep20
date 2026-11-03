@@ -1,11 +1,5 @@
-const { ethers } = require('ethers');
-const { WalletContractV4 } = require('@ton/ton');
-const { mnemonicNew, mnemonicToPrivateKey } = require('@ton/crypto');
-const TronWeb = require('tronweb');
-const doge = require('bitcore-lib-doge');
-
 module.exports = async function handler(req, res) {
-    // CORS unificado para Mini Apps y Bots
+    // CORS unificado
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -20,6 +14,13 @@ module.exports = async function handler(req, res) {
     }
 
     try {
+        // TRUCO: Metemos los require aquí adentro para atrapar el error
+        const { ethers } = require('ethers');
+        const { WalletContractV4 } = require('@ton/ton');
+        const { mnemonicNew, mnemonicToPrivateKey } = require('@ton/crypto');
+        const TronWeb = require('tronweb');
+        const doge = require('bitcore-lib-doge');
+
         let address = '';
         let privateKey = '';
         const net = network.toUpperCase();
@@ -59,7 +60,11 @@ module.exports = async function handler(req, res) {
         });
 
     } catch (error) {
-        console.error("Error generando wallet:", error);
-        return res.status(500).json({ success: false, error: 'Error interno del servidor', details: error.message });
+        // Ahora el bot te dirá exactamente qué módulo falta
+        return res.status(200).json({ 
+            success: false, 
+            error: 'Falta instalar un módulo en Vercel', 
+            detalles: error.message 
+        });
     }
 }
