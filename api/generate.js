@@ -1,10 +1,10 @@
-import { ethers } from 'ethers';
-import { TonClient, WalletContractV4 } from '@ton/ton';
-import { mnemonicNew, mnemonicToPrivateKey } from '@ton/crypto';
+const { ethers } = require('ethers');
+const { WalletContractV4 } = require('@ton/ton');
+const { mnemonicNew, mnemonicToPrivateKey } = require('@ton/crypto');
 const TronWeb = require('tronweb');
 const doge = require('bitcore-lib-doge');
- 
-export default async function handler(req, res) {
+
+module.exports = async function handler(req, res) {
     // CORS unificado para Mini Apps y Bots
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
@@ -51,7 +51,6 @@ export default async function handler(req, res) {
             return res.status(400).json({ success: false, error: 'Red no soportada' });
         }
 
-        // Se envía la respuesta directa para que la guardes
         return res.status(200).json({
             success: true,
             network: net,
@@ -61,6 +60,6 @@ export default async function handler(req, res) {
 
     } catch (error) {
         console.error("Error generando wallet:", error);
-        return res.status(500).json({ success: false, error: 'Error interno del servidor' });
+        return res.status(500).json({ success: false, error: 'Error interno del servidor', details: error.message });
     }
 }
