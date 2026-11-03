@@ -6,7 +6,7 @@
     "@ton/crypto": "^3.3.0",
     "ethers": "^6.11.1",
     "tronweb": "^5.3.0",
-    "@exodus/bitcoinjs-lib-dogecoin": "^4.1.1",
+    "bitcore-lib-doge": "^8.0.0",
     "axios": "^1.6.7",
     "buffer": "^6.0.3"
   },
