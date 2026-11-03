@@ -3,7 +3,7 @@ import { TonClient, WalletContractV4 } from '@ton/ton';
 import { mnemonicNew, mnemonicToPrivateKey } from '@ton/crypto';
 const TronWeb = require('tronweb');
 const doge = require('bitcore-lib-doge');
-
+ 
 export default async function handler(req, res) {
     // CORS unificado para Mini Apps y Bots
     res.setHeader('Access-Control-Allow-Origin', '*');
