@@ -1,7 +1,7 @@
 const TronWeb = require('tronweb');
 
 export default async function handler(req, res) {
-    // 1. Configuración de Headers CORS (Estándar unificado para tu pasarela)
+    // 1. Configuración de Headers CORS (Estándar unificado para tu pasarela) 
     res.setHeader('Access-Control-Allow-Origin', '*'); 
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
     res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
