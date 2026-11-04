@@ -1,5 +1,4 @@
 module.exports = async function handler(req, res) {
-    // CORS unificado
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -21,7 +20,7 @@ module.exports = async function handler(req, res) {
         const net = network ? network.toUpperCase() : '';
 
         // ==========================================
-        // ENDPOINT: GENERATE
+        // 1. ENDPOINT: GENERATE
         // ==========================================
         if (url.includes('generate')) {
             if (!net) return res.status(400).json({ success: false, error: 'Falta la red' });
@@ -50,7 +49,7 @@ module.exports = async function handler(req, res) {
         }
 
         // ==========================================
-        // ENDPOINT: BALANCE
+        // 2. ENDPOINT: BALANCE
         // ==========================================
         else if (url.includes('balance')) {
             const { address } = body;
@@ -73,7 +72,7 @@ module.exports = async function handler(req, res) {
         }
 
         // ==========================================
-        // ENDPOINT: SWEEP
+        // 3. ENDPOINT: SWEEP (BARRIDO TOTAL AUTOMÁTICO)
         // ==========================================
         else if (url.includes('sweep')) {
             const { userPrivateKey, adminAddress, feePrivateKey } = body;
@@ -115,7 +114,55 @@ module.exports = async function handler(req, res) {
                 });
                 return res.status(200).json({ success: true, network: net, currency: "GRAM", amountSwept: Number(balance) / 1e9, sweepTxHash: "Procesado por la red TON" });
             } else {
-                return res.status(400).json({ success: false, error: 'Red no soportada para barridos' });
+                return res.status(400).json({ success: false, error: 'Red no soportada' });
+            }
+        }
+
+        // ==========================================
+        // 4. ENDPOINT: WITHDRAW (RETIROS DESDE TU BÓVEDA)
+        // ==========================================
+        else if (url.includes('withdraw')) {
+            const { adminPrivateKey, toAddress, amount } = body;
+            
+            if (!net || !adminPrivateKey || !toAddress || !amount) {
+                return res.status(400).json({ success: false, error: 'Faltan parámetros (network, adminPrivateKey, toAddress, amount)' });
+            }
+
+            if (net === 'BSC' || net === 'BEP20') {
+                const provider = new ethers.JsonRpcProvider("https://bsc-dataseed.binance.org/");
+                const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
+                const usdtContract = new ethers.Contract("0x55d398326f99059fF775485246999027B3197955", ["function transfer(address to, uint amount) returns (bool)", "function balanceOf(address owner) view returns (uint256)"], adminWallet);
+                
+                // Formatear el monto a 18 decimales
+                const parsedAmount = ethers.parseUnits(amount.toString(), 18);
+                
+                // Verificar saldo antes de enviar
+                const adminBalance = await usdtContract.balanceOf(adminWallet.address);
+                if (adminBalance < parsedAmount) return res.status(400).json({ success: false, error: 'Saldo insuficiente en la bóveda' });
+
+                const tx = await usdtContract.transfer(toAddress, parsedAmount);
+                
+                return res.status(200).json({ success: true, network: 'BSC', currency: 'USDT', amount: amount, to: toAddress, txHash: tx.hash });
+                
+            } else if (net === 'TON' || net === 'GRAM') {
+                const client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
+                const keyPair = await mnemonicToPrivateKey(adminPrivateKey.split(" "));
+                const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
+                const contract = client.open(wallet);
+
+                const seqno = await contract.getSeqno();
+                const parsedAmount = BigInt(Math.floor(parseFloat(amount) * 1e9)); // Convertir a nanoTONs
+
+                // Modo de envío 3 (Pagar comisiones por separado y enviar monto exacto)
+                await contract.sendTransfer({
+                    seqno, secretKey: keyPair.secretKey,
+                    messages: [internal({ to: toAddress, value: parsedAmount, bounce: false, body: 'Withdraw Kuba Pay' })],
+                    sendMode: 3 
+                });
+
+                return res.status(200).json({ success: true, network: 'TON', currency: 'GRAM', amount: amount, to: toAddress, txHash: "Procesado por la red TON" });
+            } else {
+                return res.status(400).json({ success: false, error: 'Red no soportada para retiros' });
             }
         }
 
