@@ -1,9 +1,10 @@
 module.exports = async function handler(req, res) {
-    // CORS unificado
+    // CORS unificado y reforzado para Telegram Mini Apps
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
+    // Manejo de pre-flight request para el fetch() de React/Next.js
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ error: 'Solo POST' });
 
@@ -14,7 +15,7 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        // TRUCO: Metemos los require aquí adentro para atrapar el error
+        // TRUCO: Importaciones dinámicas para capturar errores de instalación
         const { ethers } = require('ethers');
         const { WalletContractV4 } = require('@ton/ton');
         const { mnemonicNew, mnemonicToPrivateKey } = require('@ton/crypto');
@@ -37,10 +38,17 @@ module.exports = async function handler(req, res) {
             privateKey = account.privateKey;
         } 
         else if (net === 'TON' || net === 'GRAM') {
+            // GRAM opera sobre la blockchain de TON. Es la misma arquitectura.
             const mnemonic = await mnemonicNew();
             const keyPair = await mnemonicToPrivateKey(mnemonic);
+            
+            // Billetera V4: El estándar exacto de Telegram
             const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
+            
+            // bounceable: false es vital para recibir depósitos de exchanges sin problemas
             address = wallet.address.toString({ bounceable: false });
+            
+            // La llave secreta son las 24 palabras
             privateKey = mnemonic.join(" "); 
         } 
         else if (net === 'DOGE' || net === 'DOGECOIN') {
@@ -60,10 +68,10 @@ module.exports = async function handler(req, res) {
         });
 
     } catch (error) {
-        // Ahora el bot te dirá exactamente qué módulo falta
+        console.error("Error en generación:", error);
         return res.status(200).json({ 
             success: false, 
-            error: 'Falta instalar un módulo en Vercel', 
+            error: 'Fallo interno o falta instalar un módulo en Vercel', 
             detalles: error.message 
         });
     }
