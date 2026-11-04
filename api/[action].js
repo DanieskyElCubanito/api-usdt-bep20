@@ -19,6 +19,12 @@ module.exports = async function handler(req, res) {
 
         const net = network ? network.toUpperCase() : '';
 
+        // Cliente TON configurado con tu API Key personal para evitar errores 429
+        const tonClient = new TonClient({
+            endpoint: 'https://toncenter.com/api/v2/jsonRPC',
+            apiKey: '142bbbe85e3c4f557cb66601194def748ead507f163c0eeee681146f66492e18'
+        });
+
         // ==========================================
         // 1. ENDPOINT: GENERATE
         // ==========================================
@@ -62,8 +68,7 @@ module.exports = async function handler(req, res) {
                 balanceNumber = parseFloat(ethers.formatUnits(await usdtContract.balanceOf(address), 18));
             } else if (net === 'TON' || net === 'GRAM') {
                 const { Address } = require('@ton/ton');
-                const client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
-                const rawBalance = await client.getBalance(Address.parse(address));
+                const rawBalance = await tonClient.getBalance(Address.parse(address));
                 balanceNumber = Number(rawBalance) / 1e9;
             } else {
                 return res.status(400).json({ success: false, error: 'Red no soportada' });
@@ -96,12 +101,11 @@ module.exports = async function handler(req, res) {
 
                 const sweepTx = await usdtContract.transfer(adminAddress, usdtBalance);
                 return res.status(200).json({ success: true, network: "BSC", currency: "USDT", amountSwept: ethers.formatUnits(usdtBalance, 18), gasTxHash: fundTx.hash, sweepTxHash: sweepTx.hash });
-                
+
             } else if (net === 'TON' || net === 'GRAM') {
-                const client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
                 const keyPair = await mnemonicToPrivateKey(userPrivateKey.split(" "));
                 const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
-                const contract = client.open(wallet);
+                const contract = tonClient.open(wallet);
 
                 const balance = await contract.getBalance();
                 if (balance === 0n) return res.status(400).json({ success: false, error: 'Sin fondos GRAM' });
@@ -123,7 +127,7 @@ module.exports = async function handler(req, res) {
         // ==========================================
         else if (url.includes('withdraw')) {
             const { adminPrivateKey, toAddress, amount } = body;
-            
+
             if (!net || !adminPrivateKey || !toAddress || !amount) {
                 return res.status(400).json({ success: false, error: 'Faltan parámetros (network, adminPrivateKey, toAddress, amount)' });
             }
@@ -132,28 +136,23 @@ module.exports = async function handler(req, res) {
                 const provider = new ethers.JsonRpcProvider("https://bsc-dataseed.binance.org/");
                 const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
                 const usdtContract = new ethers.Contract("0x55d398326f99059fF775485246999027B3197955", ["function transfer(address to, uint amount) returns (bool)", "function balanceOf(address owner) view returns (uint256)"], adminWallet);
-                
-                // Formatear el monto a 18 decimales
+
                 const parsedAmount = ethers.parseUnits(amount.toString(), 18);
-                
-                // Verificar saldo antes de enviar
                 const adminBalance = await usdtContract.balanceOf(adminWallet.address);
                 if (adminBalance < parsedAmount) return res.status(400).json({ success: false, error: 'Saldo insuficiente en la bóveda' });
 
                 const tx = await usdtContract.transfer(toAddress, parsedAmount);
-                
+
                 return res.status(200).json({ success: true, network: 'BSC', currency: 'USDT', amount: amount, to: toAddress, txHash: tx.hash });
-                
+
             } else if (net === 'TON' || net === 'GRAM') {
-                const client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
                 const keyPair = await mnemonicToPrivateKey(adminPrivateKey.split(" "));
                 const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
-                const contract = client.open(wallet);
+                const contract = tonClient.open(wallet);
 
                 const seqno = await contract.getSeqno();
-                const parsedAmount = BigInt(Math.floor(parseFloat(amount) * 1e9)); // Convertir a nanoTONs
+                const parsedAmount = BigInt(Math.floor(parseFloat(amount) * 1e9));
 
-                // Modo de envío 3 (Pagar comisiones por separado y enviar monto exacto)
                 await contract.sendTransfer({
                     seqno, secretKey: keyPair.secretKey,
                     messages: [internal({ to: toAddress, value: parsedAmount, bounce: false, body: 'Withdraw Kuba Pay' })],
